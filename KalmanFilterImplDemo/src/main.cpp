@@ -6,8 +6,8 @@
 #include "SystemImpl.h"
 
 #include <stdio.h>
-#include <random>
 #include <chrono>
+#include <format>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -188,7 +188,7 @@ class : public SystemImpl<2, 1, 1>
 } simpleSpringMassSystem;
 
 
-
+// Select system to use here
 constexpr size_t STATE_DIM = 2, OUTPUT_DIM = 1, CONTROL_DIM = 1;
 SystemImpl<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* systemImpl = &simpleSpringMassSystem;
 
@@ -206,8 +206,6 @@ int main()
 
     systemImpl->createFilter();
 
-    //dists[0] = std::normal_distribution<float>(0, std::sqrt(measurementNoiseCov(0, 0)));
-
     while (!glfwWindowShouldClose(window))
     {
 
@@ -224,9 +222,16 @@ int main()
         const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(controlVec);
 
         Vector<OUTPUT_DIM> measurementVec = systemImpl->getMeasurement(controlVec);
+
+        auto timeBefore = std::chrono::high_resolution_clock::now();
         KalmanFilterImpl::Gaussian<STATE_DIM> currentEstimate = systemImpl->getPrediction(controlVec, measurementVec);
+        auto timeAfter = std::chrono::high_resolution_clock::now();
+
         Vector<STATE_DIM> estimateMean = currentEstimate.getMean();
         controlVec(0) = 0;
+
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(timeAfter - timeBefore);
+        const uint64_t executionTime = duration.count();
 
         static float history = 10.0f;
 
@@ -274,6 +279,8 @@ int main()
             ImGui::Begin("Options");
 
             ImGui::DragFloat("History length", &history);
+
+            ImGui::Text(("Execution time: " + std::to_string(executionTime) + " us").c_str());
 
             ImGui::End();
         }

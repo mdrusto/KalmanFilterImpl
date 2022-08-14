@@ -15,6 +15,7 @@ namespace KalmanFilterImpl
 	{
 	public:
 
+		KalmanFilter() = default;
 		KalmanFilter(
 				const Matrix<STATE_DIM, STATE_DIM>& systemMat, 
 				const Matrix<STATE_DIM, CONTROL_DIM>& inputMat, 
@@ -23,10 +24,7 @@ namespace KalmanFilterImpl
 				const Matrix<STATE_DIM, STATE_DIM>& processNoiseCov, 
 				const Matrix<OUTPUT_DIM, OUTPUT_DIM>& measurementNoiseCov) 
 				: m_systemMatrix(systemMat), m_inputMatrix(inputMat), m_outputMatrix(outputMat), m_feedthroughMatrix(feedthroughMat), 
-				m_processNoiseCovariance(processNoiseCov), m_measurementNoiseCovariance(measurementNoiseCov)
-		{
-			m_previousEstimate = Gaussian<STATE_DIM>(Vector<STATE_DIM>::Zero(), Matrix<STATE_DIM, STATE_DIM>::Zero());
-		}
+				m_processNoiseCovariance(processNoiseCov), m_measurementNoiseCovariance(measurementNoiseCov) {}
 		~KalmanFilter() = default;
 
 		Gaussian<STATE_DIM> updatePrediction(Vector<CONTROL_DIM> controlVec, Vector<OUTPUT_DIM> measurementVec)

@@ -4,6 +4,8 @@
 
 #include <Eigen/Eigenvalues>
 
+#include <random>
+
 
 template <size_t STATE_DIM, size_t OUTPUT_DIM, size_t CONTROL_DIM>
 class SystemImpl {
@@ -11,20 +13,15 @@ class SystemImpl {
 public:
 
     SystemImpl() = default;
-    ~SystemImpl()
-    {
-        delete filter;
-        delete processNoise;
-        delete measurementNoise;
-    }
+    ~SystemImpl() = default;
 
-    KalmanFilterImpl::KalmanFilter<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* filter = nullptr;
+    KalmanFilterImpl::KalmanFilter<STATE_DIM, OUTPUT_DIM, CONTROL_DIM> filter;
 
-    const int getStateDim() const { return STATE_DIM };
+    const int getStateDim() const { return STATE_DIM; };
 
-    const int getOutputDim() const { return OUTPUT_DIM };
+    const int getOutputDim() const { return OUTPUT_DIM; };
 
-    const int getControlDim() const { return CONTROL_DIM };
+    const int getControlDim() const { return CONTROL_DIM; };
 
     virtual void setupFilter() = 0;
 
@@ -32,28 +29,28 @@ public:
     {
         setupFilter();
 
-        filter = new KalmanFilterImpl::KalmanFilter<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>(
+        filter = KalmanFilterImpl::KalmanFilter<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>(
             systemMat, inputMat, outputMat, feedthroughMat, processNoiseCov, measurementNoiseCov);
 
-        processNoise = new NormalRandomVar<STATE_DIM>(processNoiseCov);
-        measurementNoise = new NormalRandomVar<OUTPUT_DIM>(measurementNoiseCov);
+        processNoise = NormalRandomVar<STATE_DIM>(processNoiseCov);
+        measurementNoise = NormalRandomVar<OUTPUT_DIM>(measurementNoiseCov);
     }
 
     Vector<STATE_DIM> updateAndGetActualState(Vector<CONTROL_DIM> controlVec)
     {
-        Vector<STATE_DIM> newState = systemMat * currentState + inputMat * controlVec + processNoise->generate();
+        Vector<STATE_DIM> newState = systemMat * currentState + inputMat * controlVec + processNoise.generate();
         currentState = newState;
         return newState;
     }
 
     Vector<OUTPUT_DIM> getMeasurement(Vector<CONTROL_DIM> controlVec)
     {
-        return outputMat * currentState + feedthroughMat * controlVec + measurementNoise->generate();
+        return outputMat * currentState + feedthroughMat * controlVec + measurementNoise.generate();
     }
 
     KalmanFilterImpl::Gaussian<STATE_DIM> getPrediction(Vector<CONTROL_DIM> controlVec, Vector<OUTPUT_DIM> measurementVec)
     {
-        return filter->updatePrediction(controlVec, measurementVec);
+        return filter.updatePrediction(controlVec, measurementVec);
     }
 
     Vector<CONTROL_DIM> initialControlVec;
@@ -76,6 +73,7 @@ protected:
     {
         Matrix<DIM, DIM> m_transform;
 
+        NormalRandomVar() : NormalRandomVar(Matrix<DIM, DIM>::Zero()) {}
         NormalRandomVar(Matrix<DIM, DIM> cov)
         {
             Eigen::SelfAdjointEigenSolver<Matrix<DIM, DIM>> eigenSolver(cov);
@@ -92,7 +90,7 @@ protected:
 
     };
 
-    NormalRandomVar<STATE_DIM> *processNoise;
-    NormalRandomVar<OUTPUT_DIM> *measurementNoise;
+    NormalRandomVar<STATE_DIM> processNoise = NormalRandomVar<STATE_DIM>();
+    NormalRandomVar<OUTPUT_DIM> measurementNoise = NormalRandomVar<OUTPUT_DIM>();
 
 };
