@@ -4,7 +4,9 @@
 
 #include <Eigen/Eigenvalues>
 
+#include <chrono>
 #include <random>
+#include <iostream>
 
 
 template <size_t STATE_DIM, size_t OUTPUT_DIM, size_t CONTROL_DIM>
@@ -38,22 +40,39 @@ public:
 
     Vector<STATE_DIM> updateAndGetActualState(Vector<CONTROL_DIM> controlVec)
     {
-        Vector<STATE_DIM> newState = systemMat * currentState + inputMat * controlVec + processNoise.generate();
+        const std::chrono::time_point currentFrameTime = std::chrono::high_resolution_clock::now();
+        static std::chrono::time_point lastFrameTime = currentFrameTime;
+        currentDeltaTime = std::chrono::duration_cast<std::chrono::nanoseconds>(currentFrameTime - lastFrameTime).count() * 1.0e-9f;
+        lastFrameTime = currentFrameTime;
+        //std::cout << "Current delta time: " << currentDeltaTime << " s\n";
+
+        Matrix<STATE_DIM, STATE_DIM> systemMatDiscrete = KalmanFilterImpl::calculateDiscreteSystemMatrix<STATE_DIM>(systemMat, currentDeltaTime);
+        Matrix<STATE_DIM, CONTROL_DIM> inputMatDiscrete = KalmanFilterImpl::calculateDiscreteInputMatrix<STATE_DIM, CONTROL_DIM>(inputMat, currentDeltaTime);
+
+        Vector<STATE_DIM> newState = systemMatDiscrete * currentState + inputMatDiscrete * controlVec + processNoise.generate();
         currentState = newState;
         return newState;
     }
 
-    Vector<OUTPUT_DIM> getMeasurement(Vector<CONTROL_DIM> controlVec)
+    Vector<OUTPUT_DIM> getMeasurement(Vector<CONTROL_DIM> controlVec) const
     {
+        // Return the measurement generated from the current state already calculated from updateAndGetActualState
         return outputMat * currentState + feedthroughMat * controlVec + measurementNoise.generate();
     }
 
     KalmanFilterImpl::Gaussian<STATE_DIM> getPrediction(Vector<CONTROL_DIM> controlVec, Vector<OUTPUT_DIM> measurementVec)
     {
-        return filter.updatePrediction(controlVec, measurementVec);
+        // Use deltaTime calculated already in updateAndGetActualState
+        return filter.updatePrediction(controlVec, measurementVec, currentDeltaTime);
     }
 
     Vector<CONTROL_DIM> initialControlVec;
+
+private:
+
+    float currentDeltaTime = 0.0f;
+
+    Vector<STATE_DIM> currentState;
 
 protected:
 
@@ -63,8 +82,6 @@ protected:
     Matrix<OUTPUT_DIM, CONTROL_DIM> feedthroughMat;
     Matrix<STATE_DIM, STATE_DIM> processNoiseCov;
     Matrix<OUTPUT_DIM, OUTPUT_DIM> measurementNoiseCov;
-
-    Vector<STATE_DIM> currentState;
 
     // Class to generate random multivariate Gaussian noise, copied from:
     // https://stackoverflow.com/questions/6142576/sample-from-multivariate-normal-gaussian-distribution-in-c

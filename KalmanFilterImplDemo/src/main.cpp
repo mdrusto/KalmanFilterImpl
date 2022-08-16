@@ -170,19 +170,17 @@ class : public SystemImpl<2, 1, 1>
 {
     void setupFilter()
     {
-        constexpr float SPRING_STIFFNESS = 0.1f; // N/m
+        constexpr float SPRING_STIFFNESS = 10.0f; // N/m
         constexpr float MASS = 10.0f; // kg
 
-        constexpr float TIMESTEP = 1.0f / 60.0f;
-
-        systemMat << 1, TIMESTEP, -TIMESTEP * SPRING_STIFFNESS / MASS, 1;
-        inputMat << 0, TIMESTEP* SPRING_STIFFNESS / MASS;
+        systemMat << 0, 1, - SPRING_STIFFNESS / MASS, 0;
+        inputMat << 0, 1 / MASS;
         outputMat << 1, 0;
         feedthroughMat << 0;
         processNoiseCov << 1e-10, 0, 0, 1e-10;
         measurementNoiseCov << 0.001;
 
-        initialControlVec << 100;
+        initialControlVec << 10; // Momentum, so kg*m/s
     }
 
 } simpleSpringMassSystem;
@@ -206,6 +204,10 @@ int main()
 
     systemImpl->createFilter();
 
+    // Update system once before loop starts so we can start with non-zero delta time
+    systemImpl->updateAndGetActualState(Vector<CONTROL_DIM>(0));
+    systemImpl->getPrediction(Vector<CONTROL_DIM>(0), Vector<OUTPUT_DIM>(0));
+
     while (!glfwWindowShouldClose(window))
     {
 
@@ -220,6 +222,7 @@ int main()
         //
         static Vector<CONTROL_DIM> controlVec = systemImpl->initialControlVec;
         const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(controlVec);
+        //std::cout << actualStateVec << std::endl;
 
         Vector<OUTPUT_DIM> measurementVec = systemImpl->getMeasurement(controlVec);
 
@@ -228,21 +231,27 @@ int main()
         auto timeAfter = std::chrono::high_resolution_clock::now();
 
         Vector<STATE_DIM> estimateMean = currentEstimate.getMean();
-        controlVec(0) = 0;
 
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(timeAfter - timeBefore);
-        const uint64_t executionTime = duration.count();
+        std::chrono::nanoseconds durationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(timeAfter - timeBefore);
+        const float executionTimeUs = durationNs.count() * 1.0e-3;
 
         static float history = 10.0f;
 
         // Main window
         {
+            
+            //ImGui::SetNextWindowPos({ 0, 0 });
             ImGui::Begin("Visual");
 
             static ScrollingBuffer plotDataRef, plotDataMeas, plotDataFilt;
 
             static float t = 0;
             t += ImGui::GetIO().DeltaTime;
+            static bool resetControl = false;
+            if (t > 0.1f && !resetControl) {
+                controlVec(0) = 0;
+                resetControl = true;
+            }
 
             plotDataRef.AddPoint(t, actualStateVec(0));
             plotDataMeas.AddPoint(t, measurementVec(0));
@@ -251,14 +260,14 @@ int main()
             if (ImPlot::BeginPlot("Data", ImVec2(-1, 900)))
             {
                 static ImPlotAxisFlags flags = ImPlotAxisFlags_NoTickLabels;
-                ImPlot::SetupAxes(NULL, NULL, flags, flags);
+                ImPlot::SetupAxes("Time (s)", "Position (m)", flags, flags);
                 ImPlot::SetupAxisLimits(ImAxis_X1, t - history * 0.9, t + history * 0.1, ImGuiCond_Always);
                 ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 1);
                 ImPlot::SetNextFillStyle(IMPLOT_AUTO_COL, 0.5f);
 
                 // Plot measurement signal
                 ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 1.0f);
-                ImPlot::PlotScatter("Raw measurement", &plotDataMeas.Data[0].x, &plotDataMeas.Data[0].y, plotDataMeas.Data.size(), 0, plotDataMeas.m_offset, 2 * sizeof(float));
+                ImPlot::PlotLine("Raw measurement", &plotDataMeas.Data[0].x, &plotDataMeas.Data[0].y, plotDataMeas.Data.size(), 0, plotDataMeas.m_offset, 2 * sizeof(float));
                 ImPlot::PopStyleVar();
 
                 ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2);
@@ -280,7 +289,10 @@ int main()
 
             ImGui::DragFloat("History length", &history);
 
-            ImGui::Text(("Execution time: " + std::to_string(executionTime) + " us").c_str());
+            char execTimeBuffer[30];
+            sprintf(execTimeBuffer, "Execution time: %.2f us", executionTimeUs);
+            std::cout << execTimeBuffer << std::endl;
+            ImGui::Text(execTimeBuffer);
 
             ImGui::End();
         }
