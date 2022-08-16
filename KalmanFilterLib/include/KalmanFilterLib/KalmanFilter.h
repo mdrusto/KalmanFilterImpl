@@ -17,13 +17,13 @@ namespace KalmanFilterImpl
 
 		KalmanFilter() = default;
 		KalmanFilter(
-				const Matrix<STATE_DIM, STATE_DIM>& systemMat, 
+				const Matrix<STATE_DIM, STATE_DIM>& m_systemMat, 
 				const Matrix<STATE_DIM, CONTROL_DIM>& inputMat, 
 				const Matrix<OUTPUT_DIM, STATE_DIM>& outputMat, 
 				const Matrix<OUTPUT_DIM, CONTROL_DIM>& feedthroughMat, 
 				const Matrix<STATE_DIM, STATE_DIM>& processNoiseCov, 
 				const Matrix<OUTPUT_DIM, OUTPUT_DIM>& measurementNoiseCov) 
-				: m_systemMatrix(systemMat), m_inputMatrix(inputMat), m_outputMatrix(outputMat), m_feedthroughMatrix(feedthroughMat), 
+				: m_systemMatrix(m_systemMat), m_inputMatrix(inputMat), m_outputMatrix(outputMat), m_feedthroughMatrix(feedthroughMat), 
 				m_processNoiseCovariance(processNoiseCov), m_measurementNoiseCovariance(measurementNoiseCov) {}
 		~KalmanFilter() = default;
 
@@ -68,14 +68,14 @@ namespace KalmanFilterImpl
 		Matrix<STATE_DIM, STATE_DIM> m_processNoiseCovariance;
 		Matrix<OUTPUT_DIM, CONTROL_DIM> m_measurementNoiseCovariance;
 
-		Gaussian<STATE_DIM> m_previousEstimate;
+		Gaussian<STATE_DIM> m_previousEstimate{Vector<STATE_DIM>::Zero(), 1000 * Matrix<STATE_DIM, STATE_DIM>::Identity()};
 
 	};
 
 	template <size_t STATE_DIM>
-	Matrix<STATE_DIM, STATE_DIM> calculateDiscreteSystemMatrix(const Matrix<STATE_DIM, STATE_DIM>& systemMat, float deltaTime)
+	Matrix<STATE_DIM, STATE_DIM> calculateDiscreteSystemMatrix(const Matrix<STATE_DIM, STATE_DIM>& m_systemMat, float deltaTime)
 	{
-		return Matrix<STATE_DIM, STATE_DIM>::Identity(STATE_DIM, STATE_DIM) + systemMat * deltaTime;
+		return Matrix<STATE_DIM, STATE_DIM>::Identity(STATE_DIM, STATE_DIM) + m_systemMat * deltaTime;
 	}
 
 	template <size_t STATE_DIM, size_t CONTROL_DIM>

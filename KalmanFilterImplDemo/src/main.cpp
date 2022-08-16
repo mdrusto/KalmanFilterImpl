@@ -108,7 +108,7 @@ GLFWwindow* setupImGui()
     ImGuiIO& io = ImGui::GetIO();
     (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     io.ConfigDockingWithShift = false;
 
     ImGui::StyleColorsDark();
@@ -173,14 +173,14 @@ class : public SystemImpl<2, 1, 1>
         constexpr float SPRING_STIFFNESS = 10.0f; // N/m
         constexpr float MASS = 10.0f; // kg
 
-        systemMat << 0, 1, - SPRING_STIFFNESS / MASS, 0;
-        inputMat << 0, 1 / MASS;
-        outputMat << 1, 0;
-        feedthroughMat << 0;
-        processNoiseCov << 1e-10, 0, 0, 1e-10;
-        measurementNoiseCov << 0.001;
+        m_systemMat << 0, 1, - SPRING_STIFFNESS / MASS, 0;
+        m_inputMat << 0, 1 / MASS;
+        m_outputMat << 1, 0;
+        m_feedthroughMat << 0;
+        m_processNoiseCov << 1e-10, 0, 0, 1e-10;
+        m_measurementNoiseCov << 0.0001;
 
-        initialControlVec << 10; // Momentum, so kg*m/s
+        m_currentState << 0.1, 0;
     }
 
 } simpleSpringMassSystem;
@@ -189,7 +189,36 @@ class : public SystemImpl<2, 1, 1>
 // Select system to use here
 constexpr size_t STATE_DIM = 2, OUTPUT_DIM = 1, CONTROL_DIM = 1;
 SystemImpl<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* systemImpl = &simpleSpringMassSystem;
+template <size_t DIM>
+void displayVector(Vector<DIM> vector) {
+    if (ImGui::BeginTable("Vector", 1, ImGuiTableFlags_Borders | ImGuiTableFlags_NoHostExtendX)) {
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        for (size_t i = 0; i < DIM; i++) { // Should only be 1 iteration
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%.4f", vector(i));
+        }
+        ImGui::EndTable();
+    }
+}
 
+template <size_t ROWS, size_t COLS>
+void displayMatrix(Matrix<ROWS, COLS> matrix) {
+    static int callCount = 0;
+    if (ImGui::BeginTable(("Table #" + std::to_string(callCount++)).c_str(), COLS, ImGuiTableFlags_Borders | ImGuiTableFlags_NoHostExtendX)) {
+        for (int j = 0; j < COLS; j++) {
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        }
+        for (size_t i = 0; i < ROWS; i++) {
+            ImGui::TableNextRow();
+            for (size_t j = 0; j < COLS; j++) {
+                ImGui::TableSetColumnIndex(j);
+                ImGui::Text("%.4f", matrix(i, j));
+            }
+        }
+        ImGui::EndTable();
+    }
+}
 
 int main()
 {
@@ -219,15 +248,14 @@ int main()
         if (implot_show_demo_window)
             ImPlot::ShowDemoWindow(&implot_show_demo_window);
 
-        //
-        static Vector<CONTROL_DIM> controlVec = systemImpl->initialControlVec;
-        const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(controlVec);
+        const static Vector<CONTROL_DIM> CONTROL_VEC(0);
+        const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(CONTROL_VEC);
         //std::cout << actualStateVec << std::endl;
 
-        Vector<OUTPUT_DIM> measurementVec = systemImpl->getMeasurement(controlVec);
+        Vector<OUTPUT_DIM> measurementVec = systemImpl->getMeasurement(CONTROL_VEC);
 
         auto timeBefore = std::chrono::high_resolution_clock::now();
-        KalmanFilterImpl::Gaussian<STATE_DIM> currentEstimate = systemImpl->getPrediction(controlVec, measurementVec);
+        KalmanFilterImpl::Gaussian<STATE_DIM> currentEstimate = systemImpl->getPrediction(CONTROL_VEC, measurementVec);
         auto timeAfter = std::chrono::high_resolution_clock::now();
 
         Vector<STATE_DIM> estimateMean = currentEstimate.getMean();
@@ -238,20 +266,13 @@ int main()
         static float history = 10.0f;
 
         // Main window
+        //ImGui::SetNextWindowPos({ 0, 0 });
+        if (ImGui::Begin("Visual"))
         {
-            
-            //ImGui::SetNextWindowPos({ 0, 0 });
-            ImGui::Begin("Visual");
-
             static ScrollingBuffer plotDataRef, plotDataMeas, plotDataFilt;
 
             static float t = 0;
             t += ImGui::GetIO().DeltaTime;
-            static bool resetControl = false;
-            if (t > 0.1f && !resetControl) {
-                controlVec(0) = 0;
-                resetControl = true;
-            }
 
             plotDataRef.AddPoint(t, actualStateVec(0));
             plotDataMeas.AddPoint(t, measurementVec(0));
@@ -259,10 +280,12 @@ int main()
 
             if (ImPlot::BeginPlot("Data", ImVec2(-1, 900)))
             {
-                static ImPlotAxisFlags flags = ImPlotAxisFlags_NoTickLabels;
+                static ImPlotAxisFlags flags = ImPlotAxisFlags_None;
                 ImPlot::SetupAxes("Time (s)", "Position (m)", flags, flags);
                 ImPlot::SetupAxisLimits(ImAxis_X1, t - history * 0.9, t + history * 0.1, ImGuiCond_Always);
-                ImPlot::SetupAxisLimits(ImAxis_Y1, 0, 1);
+                const static Vector<STATE_DIM> initialState = systemImpl->m_currentState;
+                const static float yLim = initialState(0) * 1.1f;
+                ImPlot::SetupAxisLimits(ImAxis_Y1, -yLim, yLim);
                 ImPlot::SetNextFillStyle(IMPLOT_AUTO_COL, 0.5f);
 
                 // Plot measurement signal
@@ -270,12 +293,12 @@ int main()
                 ImPlot::PlotLine("Raw measurement", &plotDataMeas.Data[0].x, &plotDataMeas.Data[0].y, plotDataMeas.Data.size(), 0, plotDataMeas.m_offset, 2 * sizeof(float));
                 ImPlot::PopStyleVar();
 
+                // Plot reference signal
                 ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2);
+                ImPlot::PlotLine("Reference (true value)", &plotDataRef.Data[0].x, &plotDataRef.Data[0].y, plotDataRef.Data.size(), 0, plotDataRef.m_offset, 2 * sizeof(float));
+
                 // Plot filtered signal
                 ImPlot::PlotLine("Filtered measurement", &plotDataFilt.Data[0].x, &plotDataFilt.Data[0].y, plotDataFilt.Data.size(), 0, plotDataFilt.m_offset, 2 * sizeof(float));
-
-                // Plot reference signal
-                ImPlot::PlotLine("Reference", &plotDataRef.Data[0].x, &plotDataRef.Data[0].y, plotDataRef.Data.size(), 0, plotDataRef.m_offset, 2 * sizeof(float));
                 ImPlot::PopStyleVar();
 
                 ImPlot::EndPlot();
@@ -284,15 +307,41 @@ int main()
             ImGui::End();
         }
 
+        if (ImGui::Begin("Options"))
         {
-            ImGui::Begin("Options");
-
             ImGui::DragFloat("History length", &history);
 
             char execTimeBuffer[30];
             sprintf(execTimeBuffer, "Execution time: %.2f us", executionTimeUs);
-            std::cout << execTimeBuffer << std::endl;
+            //std::cout << execTimeBuffer << std::endl;
             ImGui::Text(execTimeBuffer);
+
+            char deltaTimeBuffer[30];
+            sprintf(deltaTimeBuffer, "Delta time: %.2f ms", systemImpl->m_currentDeltaTime * 1e3f);
+            ImGui::Text(deltaTimeBuffer);
+
+            ImGui::End();
+        }
+
+        if (ImGui::Begin("Parameters"))
+        {
+            ImGui::Text("System matrix");
+            displayMatrix<STATE_DIM, STATE_DIM>(systemImpl->m_systemMat);
+
+            ImGui::Text("Input matrix");
+            displayMatrix<STATE_DIM, CONTROL_DIM>(systemImpl->m_inputMat);
+
+            ImGui::Text("Output matrix");
+            displayMatrix<OUTPUT_DIM, STATE_DIM>(systemImpl->m_outputMat);
+
+            ImGui::Text("Feedthrough matrix");
+            displayMatrix<OUTPUT_DIM, CONTROL_DIM>(systemImpl->m_feedthroughMat);
+
+            ImGui::Text("Process noise covariance");
+            displayMatrix<STATE_DIM, STATE_DIM>(systemImpl->m_processNoiseCov);
+
+            ImGui::Text("Measurement noise covariance");
+            displayMatrix<OUTPUT_DIM, OUTPUT_DIM>(systemImpl->m_measurementNoiseCov);
 
             ImGui::End();
         }
