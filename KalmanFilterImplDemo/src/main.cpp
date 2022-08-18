@@ -185,10 +185,111 @@ class : public SystemImpl<2, 1, 1>
 
 } simpleSpringMassSystem;
 
+class : public SystemImpl<6, 3, 4>
+{
+    
+    void setupFilter()
+    {
+        constexpr float RADIUS = 0.1f;
+        constexpr float I_x = 1.0f, I_y = 1.0f, I_z = 1.0f;
+        constexpr float FM_SCALING_FACTOR = 1.0f;
+
+        m_systemMat <<
+            0, 0, 0, 1, 0, 0,
+            0, 0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0;
+
+        m_inputMat <<
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, RADIUS / I_x, 0, -RADIUS / I_x,
+            RADIUS / I_y, 0, -RADIUS / I_y, 0,
+            -FM_SCALING_FACTOR / I_z, FM_SCALING_FACTOR / I_z, -FM_SCALING_FACTOR / I_z, FM_SCALING_FACTOR / I_z;
+
+        m_outputMat <<
+            1, 0, 0, 0, 0, 0,
+            0, 1, 0, 0, 0, 0,
+            0, 0, 1, 0, 0, 0;
+
+        // Feedthrough matrix is zero
+
+        m_processNoiseCov = 1.0f * Matrix<6, 6>::Identity();
+        m_measurementNoiseCov << 1.0f * Matrix<3, 3>::Identity();
+
+        m_currentState << 0, 0, 0, 0, 0, 0;
+    }
+
+} quadcopter3DOF;
+
+class : public SystemImpl<12, 6, 4>
+{
+
+    void setupFilter()
+    {
+        constexpr float RADIUS = 0.1f; // m
+        constexpr float I_x = 1.0f, I_y = 1.0f, I_z = 1.0f; // m^4
+        constexpr float FM_SCALING_FACTOR = 1.0f;
+        constexpr float G = 9.81f; // m/s^2
+        constexpr float MASS = 1.0f; // kg
+
+
+        m_systemMat <<
+            0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, -G, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, G, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+
+        m_inputMat <<
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            1/MASS, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 1 / I_x, 0, 0,
+            0, 0, 1 / I_y, 0,
+            0, 0, 0, 1 / I_z;
+
+        m_outputMat <<
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
+        // Feedthrough matrix is zero
+
+        //m_processNoiseCov = 0.001f * Matrix<12, 12>::Identity();
+        m_measurementNoiseCov << 1.0e-6f * Matrix<6, 6>::Identity();
+
+        m_currentState << 1.0f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+    }
+
+} quadcopter6DOF;
+
 
 // Select system to use here
-constexpr size_t STATE_DIM = 2, OUTPUT_DIM = 1, CONTROL_DIM = 1;
-SystemImpl<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* systemImpl = &simpleSpringMassSystem;
+constexpr size_t STATE_DIM = 12, OUTPUT_DIM = 6, CONTROL_DIM = 4;
+SystemImpl<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* systemImpl = &quadcopter6DOF;
+
+
+// GUI helper functions
 template <size_t DIM>
 void displayVector(Vector<DIM> vector) {
     if (ImGui::BeginTable("Vector", 1, ImGuiTableFlags_Borders | ImGuiTableFlags_NoHostExtendX)) {
@@ -248,7 +349,8 @@ int main()
         if (implot_show_demo_window)
             ImPlot::ShowDemoWindow(&implot_show_demo_window);
 
-        const static Vector<CONTROL_DIM> CONTROL_VEC(0);
+        const static Vector<CONTROL_DIM> CONTROL_VEC = Vector<CONTROL_DIM>(0, 0, 0, 0);
+
         const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(CONTROL_VEC);
         //std::cout << actualStateVec << std::endl;
 

@@ -48,7 +48,7 @@ public:
         //std::cout << "Current delta time: " << m_currentDeltaTime << " s\n";
 
         Matrix<STATE_DIM, STATE_DIM> systemMatDiscrete = KalmanFilterImpl::calculateDiscreteSystemMatrix<STATE_DIM>(m_systemMat, m_currentDeltaTime);
-        Matrix<STATE_DIM, CONTROL_DIM> inputMatDiscrete = KalmanFilterImpl::calculateDiscreteInputMatrix<STATE_DIM, CONTROL_DIM>(m_inputMat, m_currentDeltaTime);
+        Matrix<STATE_DIM, CONTROL_DIM> inputMatDiscrete = KalmanFilterImpl::calculateDiscreteInputMatrix<STATE_DIM, CONTROL_DIM>(m_systemMat, m_inputMat, m_currentDeltaTime);
 
         Vector<STATE_DIM> newState = systemMatDiscrete * m_currentState + inputMatDiscrete * controlVec + m_processNoise.generate();
         m_currentState = newState;

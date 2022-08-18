@@ -31,7 +31,7 @@ namespace KalmanFilterImpl
 		{
 			// Calculate discrete variants of matrices
 			Matrix<STATE_DIM, STATE_DIM> systemMatDiscrete = calculateDiscreteSystemMatrix<STATE_DIM>(m_systemMatrix, deltaTime);
-			Matrix<STATE_DIM, CONTROL_DIM> inputMatDiscrete = calculateDiscreteInputMatrix<STATE_DIM, CONTROL_DIM>(m_inputMatrix, deltaTime);
+			Matrix<STATE_DIM, CONTROL_DIM> inputMatDiscrete = calculateDiscreteInputMatrix<STATE_DIM, CONTROL_DIM>(m_systemMatrix, m_inputMatrix, deltaTime);
 
 			// Update a priori estimate
 			Vector<STATE_DIM> aPrioriMean = systemMatDiscrete * m_previousEstimate.getMean() + inputMatDiscrete * controlVec;
@@ -66,23 +66,23 @@ namespace KalmanFilterImpl
 		Matrix<OUTPUT_DIM, CONTROL_DIM> m_feedthroughMatrix;
 
 		Matrix<STATE_DIM, STATE_DIM> m_processNoiseCovariance;
-		Matrix<OUTPUT_DIM, CONTROL_DIM> m_measurementNoiseCovariance;
+		Matrix<OUTPUT_DIM, OUTPUT_DIM> m_measurementNoiseCovariance;
 
 		Gaussian<STATE_DIM> m_previousEstimate{Vector<STATE_DIM>::Zero(), 1000 * Matrix<STATE_DIM, STATE_DIM>::Identity()};
 
 	};
 
 	template <size_t STATE_DIM>
-	Matrix<STATE_DIM, STATE_DIM> calculateDiscreteSystemMatrix(const Matrix<STATE_DIM, STATE_DIM>& m_systemMat, float deltaTime)
+	Matrix<STATE_DIM, STATE_DIM> calculateDiscreteSystemMatrix(const Matrix<STATE_DIM, STATE_DIM>& systemMat, float deltaTime)
 	{
-		return Matrix<STATE_DIM, STATE_DIM>::Identity(STATE_DIM, STATE_DIM) + m_systemMat * deltaTime;
+		return Matrix<STATE_DIM, STATE_DIM>::Identity(STATE_DIM, STATE_DIM) + systemMat * deltaTime;
 	}
 
 	template <size_t STATE_DIM, size_t CONTROL_DIM>
-	Matrix<STATE_DIM, CONTROL_DIM> calculateDiscreteInputMatrix(const Matrix<STATE_DIM, CONTROL_DIM>& inputMat, float deltaTime)
+	Matrix<STATE_DIM, CONTROL_DIM> calculateDiscreteInputMatrix(const Matrix<STATE_DIM, STATE_DIM>& systemMat, const Matrix<STATE_DIM, CONTROL_DIM>& inputMat, float deltaTime)
 	{
 		// Integral approximation method
-		//return (calculateDiscreteSystemMatrix(deltaTime) - Matrix<STATE_DIM, STATE_DIM>::Identity()) * m_systemMatrix.inverse() * m_inputMatrix;
+		//return (calculateDiscreteSystemMatrix<STATE_DIM>(systemMat, deltaTime) - Matrix<STATE_DIM, STATE_DIM>::Identity()) * systemMat.inverse() * inputMat;
 
 		// Euler method
 		return inputMat * deltaTime;
