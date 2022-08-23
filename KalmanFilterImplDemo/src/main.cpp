@@ -256,8 +256,8 @@ class : public SystemImpl<12, 6, 4>
             0, 0, 0, 0,
             0, 0, 0, 0,
             0, 0, 0, 0,
-            1/MASS, 0, 0, 0,
             0, 0, 0, 0,
+            1/MASS, 0, 0, 0,
             0, 0, 0, 0,
             0, 0, 0, 0,
             0, 0, 0, 0,
@@ -349,15 +349,18 @@ int main()
         if (implot_show_demo_window)
             ImPlot::ShowDemoWindow(&implot_show_demo_window);
 
-        const static Vector<CONTROL_DIM> CONTROL_VEC = Vector<CONTROL_DIM>(0, 0, 0, 0);
+        static Vector<CONTROL_DIM> controlVec = Vector<CONTROL_DIM>(0, 0, 0, 0);
 
-        const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(CONTROL_VEC);
+        static float inputThrust = 0.0f;
+        controlVec(0) = inputThrust;
+
+        const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(controlVec);
         //std::cout << actualStateVec << std::endl;
 
-        Vector<OUTPUT_DIM> measurementVec = systemImpl->getMeasurement(CONTROL_VEC);
+        Vector<OUTPUT_DIM> measurementVec = systemImpl->getMeasurement(controlVec);
 
         auto timeBefore = std::chrono::high_resolution_clock::now();
-        KalmanFilterImpl::Gaussian<STATE_DIM> currentEstimate = systemImpl->getPrediction(CONTROL_VEC, measurementVec);
+        KalmanFilterImpl::Gaussian<STATE_DIM> currentEstimate = systemImpl->getPrediction(controlVec, measurementVec);
         auto timeAfter = std::chrono::high_resolution_clock::now();
 
         Vector<STATE_DIM> estimateMean = currentEstimate.getMean();
@@ -376,9 +379,9 @@ int main()
             static float t = 0;
             t += ImGui::GetIO().DeltaTime;
 
-            plotDataRef.AddPoint(t, actualStateVec(0));
-            plotDataMeas.AddPoint(t, measurementVec(0));
-            plotDataFilt.AddPoint(t, estimateMean(0));
+            plotDataRef.AddPoint(t, actualStateVec(2));
+            plotDataMeas.AddPoint(t, measurementVec(2));
+            plotDataFilt.AddPoint(t, estimateMean(2));
 
             if (ImPlot::BeginPlot("Data", ImVec2(-1, 900)))
             {
@@ -405,6 +408,14 @@ int main()
 
                 ImPlot::EndPlot();
             }
+
+            ImGui::End();
+        }
+
+        if (ImGui::Begin("Control"))
+        {
+            ImGui::Text("Control");
+            ImGui::VSliderFloat("##", {50, 900}, &inputThrust, -10.0f, 10.0f);
 
             ImGui::End();
         }
