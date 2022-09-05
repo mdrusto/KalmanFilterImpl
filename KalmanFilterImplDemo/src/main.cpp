@@ -1,13 +1,9 @@
-#include <Eigen/Core>
-
-#include "KalmanFilterLib/KalmanFilter.h"
 #include "KalmanFilterLib/Gaussian.h"
 
 #include "SystemImpl.h"
+#include "LinearSystem.h"
 
-#include <stdio.h>
-#include <chrono>
-#include <format>
+//#include <chrono>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -57,12 +53,6 @@ struct ScrollingBuffer {
         }
     }
 };
-
-
-
-//unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-//std::default_random_engine generator(seed);
-//std::normal_distribution<float> dists[OUTPUT_DIM] = {};
 
 
 
@@ -166,7 +156,7 @@ void imGuiDestroy(GLFWwindow* window)
 // --------- Sample systems ---------
 
 // Simple spring-mass system
-class : public SystemImpl<2, 1, 1>
+class : public LinearSystem<2, 1, 1>
 {
     void setupFilter()
     {
@@ -185,7 +175,7 @@ class : public SystemImpl<2, 1, 1>
 
 } simpleSpringMassSystem;
 
-class : public SystemImpl<6, 3, 4>
+class : public LinearSystem<6, 3, 4>
 {
     
     void setupFilter()
@@ -225,7 +215,7 @@ class : public SystemImpl<6, 3, 4>
 
 } quadcopter3DOF;
 
-class : public SystemImpl<12, 6, 4>
+class : public LinearSystem<12, 6, 4>
 {
 
     void setupFilter()
@@ -294,7 +284,7 @@ template <size_t DIM>
 void displayVector(Vector<DIM> vector) {
     if (ImGui::BeginTable("Vector", 1, ImGuiTableFlags_Borders | ImGuiTableFlags_NoHostExtendX)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-        for (size_t i = 0; i < DIM; i++) { // Should only be 1 iteration
+        for (size_t i = 0; i < DIM; i++) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::Text("%.4f", vector(i));
@@ -304,11 +294,11 @@ void displayVector(Vector<DIM> vector) {
 }
 
 template <size_t ROWS, size_t COLS>
-void displayMatrix(Matrix<ROWS, COLS> matrix) {
+void displayMatrix(Matrix<ROWS, COLS> matrix, float colWidth = 100.0f) {
     static int callCount = 0;
-    if (ImGui::BeginTable(("Table #" + std::to_string(callCount++)).c_str(), COLS, ImGuiTableFlags_Borders | ImGuiTableFlags_NoHostExtendX)) {
+    if (ImGui::BeginTable(("Table #" + std::to_string(callCount++)).c_str(), COLS, ImGuiTableFlags_Borders)) {
         for (int j = 0; j < COLS; j++) {
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch, colWidth);
         }
         for (size_t i = 0; i < ROWS; i++) {
             ImGui::TableNextRow();
@@ -332,7 +322,7 @@ int main()
     bool imgui_show_demo_window = false;
     bool implot_show_demo_window = false;
 
-    systemImpl->createFilter();
+    systemImpl->initSystem();
 
     // Update system once before loop starts so we can start with non-zero delta time
     systemImpl->updateAndGetActualState(Vector<CONTROL_DIM>(0));
@@ -357,7 +347,7 @@ int main()
         const Vector<STATE_DIM> actualStateVec = systemImpl->updateAndGetActualState(controlVec);
         //std::cout << actualStateVec << std::endl;
 
-        Vector<OUTPUT_DIM> measurementVec = systemImpl->getMeasurement(controlVec);
+        Vector<OUTPUT_DIM> measurementVec = systemImpl->calculateMeasurement(controlVec);
 
         auto timeBefore = std::chrono::high_resolution_clock::now();
         KalmanFilterImpl::Gaussian<STATE_DIM> currentEstimate = systemImpl->getPrediction(controlVec, measurementVec);
@@ -370,8 +360,25 @@ int main()
 
         static float history = 10.0f;
 
+        ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_None;
+
+        ImGuiWindowFlags dockWindowFlags = ImGuiWindowFlags_NoDocking;
+        dockWindowFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+        dockWindowFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+        static bool dockspaceOpen = true;
+
+        ImGuiViewport* mainViewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(mainViewport->Pos);
+        ImGui::SetNextWindowSize(mainViewport->Size);
+        ImGui::SetNextWindowViewport(mainViewport->ID);
+
+        ImGui::Begin("Dockspace window", &dockspaceOpen, dockWindowFlags);
+
+        ImGuiID dockspaceID = ImGui::GetID("MyDockspace");
+        ImGui::DockSpace(dockspaceID, {0, 0}, dockspaceFlags);
+
         // Main window
-        //ImGui::SetNextWindowPos({ 0, 0 });
+        
         if (ImGui::Begin("Visual"))
         {
             static ScrollingBuffer plotDataRef, plotDataMeas, plotDataFilt;
@@ -383,7 +390,7 @@ int main()
             plotDataMeas.AddPoint(t, measurementVec(2));
             plotDataFilt.AddPoint(t, estimateMean(2));
 
-            if (ImPlot::BeginPlot("Data", ImVec2(-1, 900)))
+            if (ImPlot::BeginPlot("Data", ImGui::GetContentRegionAvail()))
             {
                 static ImPlotAxisFlags flags = ImPlotAxisFlags_None;
                 ImPlot::SetupAxes("Time (s)", "Position (m)", flags, flags);
@@ -412,10 +419,10 @@ int main()
             ImGui::End();
         }
 
+        ImGui::SetNextWindowSizeConstraints({ 60, 300 }, { 60, -1 });
         if (ImGui::Begin("Control"))
         {
-            ImGui::Text("Control");
-            ImGui::VSliderFloat("##", {50, 900}, &inputThrust, -10.0f, 10.0f);
+            ImGui::VSliderFloat("##", ImGui::GetContentRegionAvail(), &inputThrust, -10.0f, 10.0f);
 
             ImGui::End();
         }
@@ -438,26 +445,28 @@ int main()
 
         if (ImGui::Begin("Parameters"))
         {
-            ImGui::Text("System matrix");
-            displayMatrix<STATE_DIM, STATE_DIM>(systemImpl->m_systemMat);
-
-            ImGui::Text("Input matrix");
-            displayMatrix<STATE_DIM, CONTROL_DIM>(systemImpl->m_inputMat);
-
-            ImGui::Text("Output matrix");
-            displayMatrix<OUTPUT_DIM, STATE_DIM>(systemImpl->m_outputMat);
-
-            ImGui::Text("Feedthrough matrix");
-            displayMatrix<OUTPUT_DIM, CONTROL_DIM>(systemImpl->m_feedthroughMat);
+            //ImGui::Text("System matrix");
+            //displayMatrix<STATE_DIM, STATE_DIM>(systemImpl->m_systemMat, 40.0f);
+            //
+            //ImGui::Text("Input matrix");
+            //displayMatrix<STATE_DIM, CONTROL_DIM>(systemImpl->m_inputMat, 40.0f);
+            //
+            //ImGui::Text("Output matrix");
+            //displayMatrix<OUTPUT_DIM, STATE_DIM>(systemImpl->m_outputMat, 40.0f);
+            //
+            //ImGui::Text("Feedthrough matrix");
+            //displayMatrix<OUTPUT_DIM, CONTROL_DIM>(systemImpl->m_feedthroughMat, 40.0f);
 
             ImGui::Text("Process noise covariance");
-            displayMatrix<STATE_DIM, STATE_DIM>(systemImpl->m_processNoiseCov);
+            displayMatrix<STATE_DIM, STATE_DIM>(systemImpl->m_processNoiseCov, 40.0f);
 
             ImGui::Text("Measurement noise covariance");
-            displayMatrix<OUTPUT_DIM, OUTPUT_DIM>(systemImpl->m_measurementNoiseCov);
+            displayMatrix<OUTPUT_DIM, OUTPUT_DIM>(systemImpl->m_measurementNoiseCov, 40.0f);
 
             ImGui::End();
         }
+
+        ImGui::End();
 
         imGuiEndOfFrame(window);
     }

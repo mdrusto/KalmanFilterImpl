@@ -34,3 +34,5 @@ add_subdirectory(extern/implot)
 # Library and executable folders
 add_subdirectory(KalmanFilterLib)
 add_subdirectory(KalmanFilterImplDemo)
+
+add_definitions(/bigobj)

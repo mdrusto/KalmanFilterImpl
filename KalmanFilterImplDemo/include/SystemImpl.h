@@ -1,11 +1,11 @@
 #pragma once
 
-#include "KalmanFilterLib/KalmanFilter.h"
+#include "NormalRandomVar.h"
 
-#include <Eigen/Eigenvalues>
+#include "KalmanFilterLib/KalmanFilter.h"
+#include "KalmanFilterLib/LinearKalmanFilter.h"
 
 #include <chrono>
-#include <random>
 #include <iostream>
 
 
@@ -15,9 +15,12 @@ class SystemImpl {
 public:
 
     SystemImpl() = default;
-    ~SystemImpl() = default;
+    ~SystemImpl()
+    {
+        delete m_filter;
+    }
 
-    KalmanFilterImpl::KalmanFilter<STATE_DIM, OUTPUT_DIM, CONTROL_DIM> m_filter;
+    KalmanFilterImpl::KalmanFilter<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* m_filter = nullptr;
 
     const int getStateDim() const { return STATE_DIM; };
 
@@ -25,17 +28,17 @@ public:
 
     const int getControlDim() const { return CONTROL_DIM; };
 
+    // Implement in anonymous subclass
     virtual void setupFilter() = 0;
 
-    void createFilter()
+    void initSystem()
     {
         setupFilter();
 
-        m_filter = KalmanFilterImpl::KalmanFilter<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>(
-            m_systemMat, m_inputMat, m_outputMat, m_feedthroughMat, m_processNoiseCov, m_measurementNoiseCov);
-
         m_processNoise = NormalRandomVar<STATE_DIM>(m_processNoiseCov);
         m_measurementNoise = NormalRandomVar<OUTPUT_DIM>(m_measurementNoiseCov);
+
+        instantiateFilter();
     }
 
     Vector<STATE_DIM> updateAndGetActualState(Vector<CONTROL_DIM> controlVec)
@@ -47,60 +50,31 @@ public:
         lastFrameTime = currentFrameTime;
         //std::cout << "Current delta time: " << m_currentDeltaTime << " s\n";
 
-        Matrix<STATE_DIM, STATE_DIM> systemMatDiscrete = KalmanFilterImpl::calculateDiscreteSystemMatrix<STATE_DIM>(m_systemMat, m_currentDeltaTime);
-        Matrix<STATE_DIM, CONTROL_DIM> inputMatDiscrete = KalmanFilterImpl::calculateDiscreteInputMatrix<STATE_DIM, CONTROL_DIM>(m_systemMat, m_inputMat, m_currentDeltaTime);
-
-        Vector<STATE_DIM> newState = systemMatDiscrete * m_currentState + inputMatDiscrete * controlVec + m_processNoise.generate();
+        Vector<STATE_DIM> newState = calculateNewState(controlVec);
         m_currentState = newState;
         return newState;
     }
 
-    Vector<OUTPUT_DIM> getMeasurement(Vector<CONTROL_DIM> controlVec) const
-    {
-        // Return the measurement generated from the current state already calculated from updateAndGetActualState
-        return m_outputMat * m_currentState + m_feedthroughMat * controlVec + m_measurementNoise.generate();
-    }
+    virtual Vector<OUTPUT_DIM> calculateMeasurement(Vector<CONTROL_DIM> controlVec) const = 0;
 
     KalmanFilterImpl::Gaussian<STATE_DIM> getPrediction(Vector<CONTROL_DIM> controlVec, Vector<OUTPUT_DIM> measurementVec)
     {
         // Use deltaTime calculated already in updateAndGetActualState
-        return m_filter.updatePrediction(controlVec, measurementVec, m_currentDeltaTime);
+        return m_filter->updatePrediction(controlVec, measurementVec, m_currentDeltaTime);
     }
 
     float m_currentDeltaTime = 0.0f;
 
     Vector<STATE_DIM> m_currentState;
 
-    Matrix<STATE_DIM, STATE_DIM> m_systemMat;
-    Matrix<STATE_DIM, CONTROL_DIM> m_inputMat;
-    Matrix<OUTPUT_DIM, STATE_DIM> m_outputMat;
-    Matrix<OUTPUT_DIM, CONTROL_DIM> m_feedthroughMat;
     Matrix<STATE_DIM, STATE_DIM> m_processNoiseCov;
     Matrix<OUTPUT_DIM, OUTPUT_DIM> m_measurementNoiseCov;
 
-    // Class to generate random multivariate Gaussian noise, copied from:
-    // https://stackoverflow.com/questions/6142576/sample-from-multivariate-normal-gaussian-distribution-in-c
-    template <size_t DIM>
-    struct NormalRandomVar
-    {
-        Matrix<DIM, DIM> m_transform;
+protected:
 
-        NormalRandomVar() : NormalRandomVar(Matrix<DIM, DIM>::Zero()) {}
-        NormalRandomVar(Matrix<DIM, DIM> cov)
-        {
-            Eigen::SelfAdjointEigenSolver<Matrix<DIM, DIM>> eigenSolver(cov);
-            m_transform = eigenSolver.eigenvectors() * eigenSolver.eigenvalues().cwiseSqrt().asDiagonal();
-        }
+    virtual Vector<STATE_DIM> calculateNewState(Vector<CONTROL_DIM> controlVec) const = 0;
 
-        Vector<DIM> generate() const
-        {
-            static std::mt19937 gen{ std::random_device{}() };
-            static std::normal_distribution<float> dist;
-
-            return m_transform * Vector<DIM>().unaryExpr([&](auto x) { return dist(gen); });
-        }
-
-    };
+    virtual void instantiateFilter() = 0;
 
     NormalRandomVar<STATE_DIM> m_processNoise = NormalRandomVar<STATE_DIM>();
     NormalRandomVar<OUTPUT_DIM> m_measurementNoise = NormalRandomVar<OUTPUT_DIM>();
