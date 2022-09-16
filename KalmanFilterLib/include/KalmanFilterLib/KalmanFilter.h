@@ -22,6 +22,10 @@ namespace KalmanFilterImpl
 
 		virtual Gaussian<STATE_DIM> updatePrediction(const Vector<CONTROL_DIM>& controlVec, const Vector<OUTPUT_DIM>& measurementVec, float deltaTime) = 0;
 
+
+		virtual Vector<STATE_DIM> systemUpdateEquation(const Vector<CONTROL_DIM>& controlVec, float deltaTime) const = 0;
+		virtual Vector<OUTPUT_DIM> observationEquation(const Vector<CONTROL_DIM>& controlVec) const = 0;
+
 	protected:
 		
 		Matrix<STATE_DIM, STATE_DIM> m_processNoiseCovariance;
@@ -29,21 +33,5 @@ namespace KalmanFilterImpl
 
 		Gaussian<STATE_DIM> m_previousEstimate{Vector<STATE_DIM>::Zero(), 1000 * Matrix<STATE_DIM, STATE_DIM>::Identity()};
 	};
-
-	template <size_t STATE_DIM>
-	Matrix<STATE_DIM, STATE_DIM> calculateDiscreteSystemMatrix(const Matrix<STATE_DIM, STATE_DIM>& systemMat, float deltaTime)
-	{
-		return Matrix<STATE_DIM, STATE_DIM>::Identity(STATE_DIM, STATE_DIM) + systemMat * deltaTime;
-	}
-
-	template <size_t STATE_DIM, size_t CONTROL_DIM>
-	Matrix<STATE_DIM, CONTROL_DIM> calculateDiscreteInputMatrix(const Matrix<STATE_DIM, STATE_DIM>& systemMat, const Matrix<STATE_DIM, CONTROL_DIM>& inputMat, float deltaTime)
-	{
-		// Integral approximation method
-		//return (calculateDiscreteSystemMatrix<STATE_DIM>(systemMat, deltaTime) - Matrix<STATE_DIM, STATE_DIM>::Identity()) * systemMat.inverse() * inputMat;
-
-		// Euler method
-		return inputMat * deltaTime;
-	}
 
 }

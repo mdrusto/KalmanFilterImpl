@@ -1,7 +1,9 @@
 #include "KalmanFilterLib/Gaussian.h"
+#include "KalmanFilterLib/ExtendedKalmanFilter.h"
 
 #include "SystemImpl.h"
 #include "LinearSystem.h"
+#include "NonlinearSystem.h"
 
 //#include <chrono>
 
@@ -156,127 +158,92 @@ void imGuiDestroy(GLFWwindow* window)
 // --------- Sample systems ---------
 
 // Simple spring-mass system
-class : public LinearSystem<2, 1, 1>
-{
-    void setupFilter()
-    {
-        constexpr float SPRING_STIFFNESS = 10.0f; // N/m
-        constexpr float MASS = 10.0f; // kg
+constexpr float SPRING_STIFFNESS = 10.0f; // N/m
+constexpr float MASS = 10.0f; // kg
+LinearSystem<2, 1, 1> simpleSpringMassSystem(
+        (Matrix<2, 2>() << 0, 1, -SPRING_STIFFNESS / MASS, 0).finished(),
+        (Matrix<2, 1>() << 0, 1 / MASS).finished(),
+        (Matrix<1, 2>() << 1, 0).finished(),
+        Matrix<1, 1>(),
+        1e-10 * Matrix<2, 2>::Identity(),
+        0.0001 * Matrix<1, 1>::Identity());
 
-        m_systemMat << 0, 1, - SPRING_STIFFNESS / MASS, 0;
-        m_inputMat << 0, 1 / MASS;
-        m_outputMat << 1, 0;
-        m_feedthroughMat << 0;
-        m_processNoiseCov << 1e-10, 0, 0, 1e-10;
-        m_measurementNoiseCov << 0.0001;
 
-        m_currentState << 0.1, 0;
-    }
-
-} simpleSpringMassSystem;
-
-class : public LinearSystem<6, 3, 4>
-{
-    
-    void setupFilter()
-    {
-        constexpr float RADIUS = 0.1f;
-        constexpr float I_x = 1.0f, I_y = 1.0f, I_z = 1.0f;
-        constexpr float FM_SCALING_FACTOR = 1.0f;
-
-        m_systemMat <<
+constexpr float RADIUS = 0.1f;
+constexpr float I_x = 1.0f, I_y = 1.0f, I_z = 1.0f;
+constexpr float FM_SCALING_FACTOR = 1.0f;
+LinearSystem<6, 3, 4> linearQuadcopter3DOF(
+        (Matrix<6, 6>() <<
             0, 0, 0, 1, 0, 0,
             0, 0, 0, 0, 1, 0,
             0, 0, 0, 0, 0, 1,
             0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0;
-
-        m_inputMat <<
+            0, 0, 0, 0, 0, 0).finished(),
+        (Matrix<6, 4>() <<
             0, 0, 0, 0,
             0, 0, 0, 0,
             0, 0, 0, 0,
             0, RADIUS / I_x, 0, -RADIUS / I_x,
             RADIUS / I_y, 0, -RADIUS / I_y, 0,
-            -FM_SCALING_FACTOR / I_z, FM_SCALING_FACTOR / I_z, -FM_SCALING_FACTOR / I_z, FM_SCALING_FACTOR / I_z;
-
-        m_outputMat <<
+            -FM_SCALING_FACTOR / I_z, FM_SCALING_FACTOR / I_z, -FM_SCALING_FACTOR / I_z, FM_SCALING_FACTOR / I_z).finished(),
+        (Matrix<3, 6>() <<
             1, 0, 0, 0, 0, 0,
             0, 1, 0, 0, 0, 0,
-            0, 0, 1, 0, 0, 0;
+            0, 0, 1, 0, 0, 0).finished(), 
+        Matrix<3, 4>(), 
+        1.0f * Matrix<6, 6>::Identity(), 
+        1.0f * Matrix<3, 3>::Identity());
 
-        // Feedthrough matrix is zero
-
-        m_processNoiseCov = 1.0f * Matrix<6, 6>::Identity();
-        m_measurementNoiseCov << 1.0f * Matrix<3, 3>::Identity();
-
-        m_currentState << 0, 0, 0, 0, 0, 0;
-    }
-
-} quadcopter3DOF;
-
-class : public LinearSystem<12, 6, 4>
-{
-
-    void setupFilter()
-    {
-        constexpr float RADIUS = 0.1f; // m
-        constexpr float I_x = 1.0f, I_y = 1.0f, I_z = 1.0f; // m^4
-        constexpr float FM_SCALING_FACTOR = 1.0f;
-        constexpr float G = 9.81f; // m/s^2
-        constexpr float MASS = 1.0f; // kg
-
-
-        m_systemMat <<
-            0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, -G, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, G, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-
-        m_inputMat <<
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            1/MASS, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 0, 0, 0,
-            0, 1 / I_x, 0, 0,
-            0, 0, 1 / I_y, 0,
-            0, 0, 0, 1 / I_z;
-
-        m_outputMat <<
+constexpr float G = 9.81f; // m/s^2
+constexpr float QC_MASS = 1.0f; // kg
+LinearSystem<12, 6, 4> linearQuadcopter6DOF(
+    (Matrix<12, 12>() <<
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, -G, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, G, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0).finished(),
+    (Matrix<12, 4>() <<
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        1/QC_MASS, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 1 / I_x, 0, 0,
+        0, 0, 1 / I_y, 0,
+        0, 0, 0, 1 / I_z).finished(),
+        (Matrix<6, 12>() <<
             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0).finished(),
+    Matrix<6, 4>(),
+    0.001f * Matrix<12, 12>::Identity(),
+    1.0e-6f * Matrix<6, 6>::Identity());
 
-        // Feedthrough matrix is zero
 
-        //m_processNoiseCov = 0.001f * Matrix<12, 12>::Identity();
-        m_measurementNoiseCov << 1.0e-6f * Matrix<6, 6>::Identity();
+//NonlinearSystem<12, 6, 4> nonlinearQuadcopter6DOF(
 
-        m_currentState << 1.0f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-    }
-
-} quadcopter6DOF;
+//);
 
 
 // Select system to use here
 constexpr size_t STATE_DIM = 12, OUTPUT_DIM = 6, CONTROL_DIM = 4;
-SystemImpl<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* systemImpl = &quadcopter6DOF;
+SystemImpl<STATE_DIM, OUTPUT_DIM, CONTROL_DIM>* systemImpl = &linearQuadcopter6DOF;
 
 
 // GUI helper functions
